@@ -9,7 +9,7 @@ from models.verdict import Verdict
 
 SHORTCUTTED_TYPES = [
     #'AuthorContent',
-    #'VerdictTag'
+    #'VerdictTag',
 ]
 
 

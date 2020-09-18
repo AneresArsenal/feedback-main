@@ -9,9 +9,11 @@ const sizesByNodeType = {
 
 
 export const nodeWithDecoration = node => {
+
   const { type } = node
   return {
     ...node,
+    color: 'red',
     size: sizesByNodeType[type] || node.size,
   }
 }

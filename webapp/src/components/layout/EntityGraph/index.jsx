@@ -15,7 +15,6 @@ const _ = ({ children, collectionName, entityId }) => {
   const graph = useSelector(state =>
     selectGraphByCollectionNameAndEntityId(state, collectionName, entityId))
 
-
   const graphWithDecoration = useMemo(() => graph && ({
     edges: graph.edges.map(edgeWithDecoration),
     nodes: graph.nodes.map(nodeWithDecoration)
