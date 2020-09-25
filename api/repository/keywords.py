@@ -3,11 +3,6 @@ from sqlalchemy.sql.expression import cast
 from sqlalchemy.sql.functions import coalesce
 
 from domain.keywords import LANGUAGE
-from models.content import Content
-from models.review import Review
-from models.tag import Tag
-from models.user import User
-from models.verdict import Verdict
 
 
 def create_tsvector(*args):
@@ -18,6 +13,12 @@ def create_tsvector(*args):
 
 
 def import_keywords():
+    from models.content import Content
+    from models.review import Review
+    from models.tag import Tag
+    from models.user import User
+    from models.verdict import Verdict
+
     Content.__ts_vector__ = create_tsvector(
         cast(coalesce(Content.title, ''), TEXT),
         cast(coalesce(Content.summary, ''), TEXT),

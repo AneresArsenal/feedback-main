@@ -1,13 +1,16 @@
-import json
-import os
-
-from pathlib import Path
 from datetime import datetime
 from glob import glob
+import json
+import os
 from sqlalchemy_api_handler import logger
 
-JOB_PATH = Path(os.path.dirname(os.path.realpath(__file__)))\
-    / '..' / 'jobs' / 'job_files'
+from utils.tmp import TMP_PATH
+
+
+JOBS_PATH = TMP_PATH / 'jobs'
+
+if not os.path.exists(JOBS_PATH):
+    os.makedirs(JOBS_PATH)
 
 
 def _construct_job_obj(job):
@@ -33,19 +36,16 @@ def get_all_jobs(app):
     return jobs
 
 
-def write_jobs_to_file(jobs):
-    jobs_str = json.dumps(jobs)
-    current_time = datetime.now().isoformat()
-    if not os.path.exists(JOB_PATH):
-        os.makedirs(JOB_PATH)
-
-    job_file = open(f'{JOB_PATH}/jobs_{current_time}.json', 'w')
-    job_file.write(jobs_str)
-    job_file.close()
-
-
 def remove_oldest_jobs_file(file_limit=5):
-    jobs_files = glob(f'{JOB_PATH}/jobs_*.json')
+    jobs_files = glob(f'{JOBS_PATH}/*.json')
     jobs_files.sort()
     if len(jobs_files) > file_limit:
         os.remove(jobs_files[0])
+
+
+def write_jobs_to_file(jobs):
+    jobs_str = json.dumps(jobs)
+    current_time = datetime.now().isoformat()
+    job_file = open(f'{JOBS_PATH}/{current_time}.json', 'w')
+    job_file.write(jobs_str)
+    job_file.close()

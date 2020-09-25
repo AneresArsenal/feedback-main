@@ -5,7 +5,6 @@ WORKDIR /opt/api
 
 COPY ./requirements.txt /opt/api/requirements.txt
 RUN pip install -r /opt/api/requirements.txt
-RUN mkdir -p /opt/api/jobs/job_files
 
 COPY ./utils/nltk_downloader.py /opt/api/utils/nltk_downloader.py
 RUN PYTHONPATH=/opt/api python -c "import utils.nltk_downloader"
