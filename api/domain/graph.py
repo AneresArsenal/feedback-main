@@ -1,5 +1,4 @@
 import inflect
-from random import random, seed
 from sqlalchemy_api_handler import as_dict, humanize
 
 
@@ -12,10 +11,6 @@ def node_type_from(entity):
 
 def node_id_from(entity):
     return '{}_{}'.format(node_type_from(entity), entity.id)
-
-
-def label_from(entity):
-    return node_id_from(entity)
 
 
 def graph_from_entity(entity,
@@ -36,7 +31,6 @@ def graph_from_entity(entity,
             'edges': []
         }
         node_ids = []
-        seed(1)
 
     node_id = node_id_from(entity)
     has_added = False
@@ -54,12 +48,8 @@ def graph_from_entity(entity,
         if is_appended:
             node = {
                 'datum': as_dict(entity),
-                'label': label_from(entity),
                 'id': node_id,
-                'type': node_type,
-                'x': random(),
-                'y': random(),
-                'size': 3
+                'type': node_type
             }
             node_ids.append(node_id)
             graph['nodes'].append(node)

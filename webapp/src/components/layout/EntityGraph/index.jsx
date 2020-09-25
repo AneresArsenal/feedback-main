@@ -30,8 +30,9 @@ const _ = ({ children, collectionName, entityId }) => {
     dispatch(requestData({ apiPath }))
   }, [collectionName, dispatch, entityId])
 
-
   if (!graphWithDecoration) return null
+
+  // console.log(graphWithDecoration.nodes.[1])
 
   return (
     <Graph graph={graphWithDecoration}>
@@ -39,7 +40,6 @@ const _ = ({ children, collectionName, entityId }) => {
     </Graph>
   )
 }
-
 
 _.defaultProps = {
   children: null,
