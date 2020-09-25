@@ -73,10 +73,10 @@ export default () => {
             )}
             <Controls
               config={config}
-              pathnameOnChange='/verdicts'
+              pathnameOnChange="/verdicts"
               render={({handleChange, locationURL}) => (
                 <KeywordsBar
-                  layout='vertical'
+                  layout="vertical"
                   onChange={handleChange}
                 />
               )}
