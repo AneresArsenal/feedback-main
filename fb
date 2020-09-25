@@ -22,7 +22,6 @@ if [ -x "$(command -v realpath)" ]; then
   ROOT_PATH=$(realpath "$(dirname "$PRG")")
 fi
 
-RUN=""
 
 set -o allexport
 source $ROOT_PATH/.env
@@ -42,6 +41,44 @@ where:
   done < params.txt
   exit 0
 fi
+
+
+# =============================================
+# Global Utilities
+# =============================================
+
+function confirm {
+  read -p "$1 (y/n) : " -r
+  echo
+  if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+    exit
+  fi
+}
+
+
+function ensure_remote {
+  if [[ "$ENV" == "not-set" ]]; then
+    echo "$1"
+    exit 3
+  fi
+}
+
+function exit_with_error {
+  MESSAGE=${1-"end of $APP_NAME command."}
+  RED='\033[0;31m'
+  NO_COLOR='\033[0m'
+  echo -e "${RED}""ERROR : $MESSAGE""${NO_COLOR}"
+  exit 1
+}
+
+function exit_with_success {
+  MESSAGE=${1-"end of $APP_NAME command."}
+  GREEN='\033[0;32m'
+  NO_COLOR='\033[0m'
+  echo -e "${GREEN}""SUCCESS : $MESSAGE""${NO_COLOR}"
+  exit 0
+}
+
 
 # =============================================
 # Get script parameters
@@ -69,7 +106,6 @@ if [[ "$TAG" != "not-set" ]] && [[ ! "$TAG" =~ ^[0-9]+\.[0-9]+\.[0-9]+ ]]; then
 fi
 
 CMD="$1"
-
 shift
 
 # =============================================
@@ -83,118 +119,126 @@ POSTGRES_SERVICE=$APP_NAME-${DATABASE}db-$MODE
 POSTGRES_USER=${APP_NAME}_user
 SCALINGO_APP=${APP_NAME}-api-$ENV
 
-# =============================================
-# Utilities functions
-# =============================================
-
-RED='\033[0;31m'
-ORANGE='\033[0;33m'
-WARNING_COLOR='\e[38;5;197m'
-NO_COLOR='\033[0m'
-
-UNAME_OUT="$(uname -s)"
-case "${UNAME_OUT}" in
-    Linux*)     MACHINE=Linux;;
-    Darwin*)    MACHINE=Mac;;
-    CYGWIN*)    MACHINE=Cygwin;;
-    MINGW*)     MACHINE=MinGw;;
-    *)          MACHINE="UNKNOWN:${UNAME_OUT}"
-esac
-
-function confirm {
- read -p "$1 (y/n) : " -n 1 -r
- echo
- if [[ ! $REPLY =~ ^[Yy]$ ]]
- then
-   exit
- fi
-}
-
-function ensure_remote {
-  if [[ "$ENV" == "not-set" ]]; then
-    echo "$1"
-    exit 3
-  fi
-}
-
-function echo_error {
-  echo -e "${RED}""$1""${NO_COLOR}"
-}
-
-function echo_warning {
-  echo -e "${ORANGE}""$1""${NO_COLOR}"
-}
-
-current_branch=$(git symbolic-ref -q HEAD)
-current_branch=${current_branch##refs/heads/}
-
-function update_branch {
-  branch="$1"
-  git fetch
-  git checkout $branch
-  git reset --hard origin/$branch || exit_error_restoring_branch
-  git submodule update || exit_error_restoring_branch
-}
-
-function exit_error_restoring_branch {
-  git checkout "$current_branch"
-  exit 1
-}
-
-function exit_success_restoring_branch {
-  git checkout "$current_branch"
-  exit 0
-}
 
 # =============================================
 # Local commands : use Docker
 # =============================================
 
-# Run alembic migration
-# Need to specify what alembic command you want to execute
-# Example: ./$COMMAND_NAME alembic upgrade HEAD
+function check {
+  STATE=$1
+  CONTAINER=${APP_NAME}-${2}-${MODE}
+  GREP=$(docker ps | grep $CONTAINER)
+  if [[ "$GREP" ]]; then
+    if [[ "$STATE" == "stop" ]]; then
+      exit_with_error "$CONTAINER is running. You should stop it before applying your command."
+    fi
+  elif [[ "$STATE" == "start" ]]; then
+    exit_with_error "$CONTAINER is not running. You should start it before applying your command."
+  fi
+}
+
+
+function containers_from_names {
+  FIELDS=("${@/#}")
+  FIELDS=("${FIELDS[@]/%/-$MODE}")
+  echo "${FIELDS[*]}"
+}
+
+# Run alembic migration, ex ./$COMMAND_NAME alembic upgrade HEAD
 if [[ "$CMD" == "alembic" ]]; then
-  RUN='docker exec $API_SERVICE bash -c "cd /opt/api && PYTHONPATH=. alembic '"$*"'"'
+  check start api
+  check start apidb
+  SUB_COMMANDS=$*
+  docker exec $API_SERVICE bash -c "cd /opt/api && PYTHONPATH=. alembic $SUB_COMMANDS"
+  if [[ $SUB_COMMANDS == "revision" ]]; then
+    echo "Apply sudo chown the revisions to your $(whoami) user..."
+    sudo chown -R $(whoami) $ROOT_PATH/api/alembic/versions
+    echo "...Done."
+  fi
+  exit_with_success
 
 
 # Connect to API container
 elif [[ "$CMD" == "bash" ]]; then
 	if [[ "$ENV" == "not-set" && "$PLATFORM" == "not-set" ]]; then
-		RUN='docker exec -it $API_SERVICE bash'
+    check start api
+    docker exec -it $API_SERVICE bash
 	elif [ "$ENV" != "not-set" ] || [ "$PLATFORM" == "scalingo" ]; then
 		scalingo -a "$SCALINGO_APP" run "bash"
-		exit
 	fi
+  exit_with_success
+
+
+# Build the docker images
+elif [[ "$CMD" == "build" ]]; then
+  docker-compose -f docker-compose.$MODE.yml build $(containers_from_names $*)
+  exit_with_success
 
 
 # Launch the python clock process locally
 elif [[ "$CMD" == "clock" ]]; then
-    RUN='docker exec $API_SERVICE bash -c "cd /opt/api && PYTHONPATH=. python clock.py"'
+  check start api
+  docker exec $API_SERVICE bash -c "cd /opt/api && PYTHONPATH=. python clock.py"
+  exit_with_success
 
+# Apply sub command to the databases from tar db files
+elif [[ "$CMD" == database ]]; then
+  SUB_CMD=$1
+  shift
 
-# Create a current schema sql of the postgres db
-elif [[ "$CMD" == "create-schema-sql" ]]; then
-  if [[ "$ENV" == "not-set" ]]; then
-    FILE=schema_$(date +"%Y_%m_%d__%H_%M_%S").sql
-    RUN='cd $ROOT_PATH;
-         docker exec $POSTGRES_SERVICE bash -c "PGPASSWORD='$POSTGRES_PASSWORD' pg_dump -h localhost -d '$POSTGRES_DB' --no-comments --no-owner --no-privileges --schema-only --exclude-table alembic_version --username '$POSTGRES_USER' --format p > /var/lib/postgresql/$FILE";
-         sudo mv docker_data_$MODE/${DATABASE}db/$FILE .;'
+  if [[ "$DATABASE" == "not-set" ]]; then
+    exit_with_error "You need to specify which database shared volume to rm (by -d api or -d geo or -d sync)"
+  fi
+
+  if [[ "$SUB_CMD" == "restore" ]]; then
+    check start ${DATABASE}db
+    BACKUP_PATH="$1"
+    BACKUP=$(echo $BACKUP_PATH | rev | cut -d'/' -f1 | rev | cut -d'.' -f1)
+    echo $BACKUP
+    cd $ROOT_PATH;
+    BACKUP_ID=$(echo $BACKUP | rev | cut -d"_" -f1,2 | rev)
+    tar xvfz $BACKUP_PATH;
+    sudo mkdir -p docker_data_$MODE/${DATABASE}db/tmp/;
+    sudo mv $BACKUP.pgsql docker_data_$MODE/${DATABASE}db/tmp;
+    docker exec $POSTGRES_SERVICE bash -c "PGPASSWORD='$POSTGRES_PASS' pg_restore -h localhost -d '$POSTGRES_DBNAME' -U '$POSTGRES_USER' -c -C -W -v -O /var/lib/postgresql/tmp/$BACKUP.pgsql;PGPASSWORD='$POSTGRES_PASS' psql -h localhost -U '$POSTGRES_USER' postgres -c \"SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname='${APP_NAME}_${DATABASE}';\";PGPASSWORD=$'$POSTGRES_PASS' dropdb -h localhost -U '$POSTGRES_USER' ${APP_NAME}_${DATABASE};PGPASSWORD='$POSTGRES_PASS' psql -h localhost -U '$POSTGRES_USER' postgres -c \"ALTER DATABASE ${APP_NAME}_${DATABASE}_${BACKUP_ID} RENAME TO ${APP_NAME}_${DATABASE};\""
+
+  elif [[ "$SUB_CMD" == "rm" ]]; then
+    check stop ${DATABASE}db
+    if [[ "$DATABASE" == "api" ]]; then
+      check stop api
+    fi
+    sudo rm -rf $ROOT_PATH/docker_data_${MODE}/${DATABASE}db
+
+  elif [[ "$SUB_CMD" == "schema" ]]; then
+    check start ${DATABASE}db
+    FILE=schema_init_$(date +"%Y_%m_%d__%H_%M_%S").sql
+    docker exec $POSTGRES_SERVICE bash -c "PGPASSWORD='$POSTGRES_PASS' pg_dump -h localhost -d '$POSTGRES_DBNAME' -U '$POSTGRES_USER' --no-comments --no-owner -N function_schema --no-privileges --schema-only --exclude-table alembic_version --exclude-schema topology --username '$POSTGRES_USER' --format p > /var/lib/postgresql/tmp/$FILE"
+    sudo sed -i "s/SELECT pg_catalog.set_config('search_path', '', false);/SET search_path = public, pg_catalog;/g" $ROOT_PATH/docker_data_$MODE/${DATABASE}db/tmp/$FILE
+    sudo sed -i '/CREATE FUNCTION/,/;/d' $ROOT_PATH/docker_data_$MODE/${DATABASE}db/tmp/$FILE
+    sudo sed -i '/CREATE OPERATOR/,/;/d' $ROOT_PATH/docker_data_$MODE/${DATABASE}db/tmp/$FILE
+    if [[ "$DATABASE" == "api" ]]; then
+      sudo mv docker_data_$MODE/${DATABASE}db/tmp/$FILE $ROOT_PATH/api/alembic/versions/sql/$FILE
+      confirm "Warning: remove previous schema_init.sql ?"
+      rm -f $ROOT_PATH/api/alembic/versions/sql/schema_init.sql;
+      mv $ROOT_PATH/api/alembic/versions/sql/$FILE $ROOT_PATH/api/alembic/versions/sql/schema_init.sql
+    fi
+
+  elif [[ "$SUB_CMD" == "restamp" ]]; then
+    if [[ "$DATABASE" != "api" ]]; then
+      exit_with_error "This command is only available for -d api."
+    fi
+    confirm "Did you first deleted the database ? (else do a $APP_NAME -d api database rm)"
+    check start apidb
+    check start api
+    docker exec $API_SERVICE bash -c "cd /opt/api && PYTHONPATH=. alembic stamp base && PYTHONPATH=. alembic upgrade head;"
   else
-    RUN="cd $ROOT_PATH;
-        ./scripts/scalingo/create_schema_sql.sh -a $SCALINGO_APP -b $ROOT_PATH/docker_data_$MODE "
+    check start ${DATABASE}db
+    if [[ "$DATABASE" == "api" ]]; then
+      check start api
+    fi
+    docker exec $API_SERVICE bash -c "cd /opt/api && PYTHONPATH=. python scripts/manager.py database --command=$SUB_CMD"
   fi
-
-# Create schema_init.sql into alembic
-elif [[ "$CMD" == "create-init-schema-sql" ]]; then
-  if [ -f "$ROOT_PATH/api/alembic/versions/init_schema.sql" ]; then
-    confirm "Warning: remove previous init_schema.sql ?"
-    rm -f $ROOT_PATH/api/alembic/versions/init_schema.sql;
-  fi
-  FILE=schema_$(date +"%Y_%m_%d__%H_%M_%S").sql
-  ./$COMMAND_NAME -e $ENV create-schema-sql;
-  RUN="cd $ROOT_PATH;
-       mv $FILE api/alembic/versions/init_schema.sql;
-       sed -i \"s/SELECT pg_catalog.set_config('search_path', '', false);/SET search_path = public, pg_catalog;/g\" api/alembic/versions/init_schema.sql;"
+  exit_with_success
 
 
 # Dump database into pgdump file
@@ -204,19 +248,14 @@ elif [[ "$CMD" == "env" ]]; then
   while read $PARAM_FIELDS; do
     echo "$name=$(eval echo \$$name)"
   done < $ROOT_PATH/params.txt
-  exit;
+  exit_with_success
 
 
 # Kill ALL docker containersy/
 elif [[ "$CMD" == "kill-all-containers" ]]; then
   confirm "Warning: all your docker containers are going to be killed ?"
-  RUN='docker kill $(docker ps -q)'
-
-
-# Build the docker images
-elif [[ "$CMD" == "build" ]]; then
-  RUN='cd $ROOT_PATH;
-       docker-compose -f docker-compose.$MODE.yml build $*;'
+  docker kill $(docker ps -q)
+  exit_with_success
 
 
 # Create a ngrok tunnel of localhost:80 api
@@ -233,53 +272,36 @@ elif [[ "$CMD" == "ngrok" ]]; then
    PORT=3000
    SUBDOMAIN=$NGROK_WEBAPP_SUBDOMAIN
  fi
- RUN='ngrok http -subdomain=$SUBDOMAIN $PORT'
+ ngrok http -subdomain=$SUBDOMAIN $PORT
+ exit_with_success
 
 
 # Pull and build the docker images from no cache
 elif [[ "$CMD" == "rebuild" ]]; then
   cd $ROOT_PATH
   docker-compose -f docker-compose.$MODE.yml pull apidb-$MODE
-  ./$COMMAND_NAME -m $MODE build --no-cache $*
-  exit
+  docker-compose -f docker-compose.$MODE.yml build --no-cache $(containers_from_names $*)
+  exit_with_success
 
 
 # Restart docker-compose up with forcing recreation and unmounting volumes
 elif [[ "$CMD" == "restart" ]]; then
-  docker-compose -f docker-compose.$MODE.yml down --volumes $*
-  ./$COMMAND_NAME -m $MODE start --force-recreate $*
-  exit
-
-
-# Restore a postgresql database from file
-elif [[ "$CMD" == restore-backup-pgsql ]]; then
-  BACKUP="$1"
-  cd $ROOT_PATH;
-  BACKUP_ID=$(echo $BACKUP | rev | cut -d"_" -f1,2 | rev)
-  tar xvfz $BACKUP.tar.gz;
-  sudo mkdir -p docker_data_$MODE/apidb/tmp/;
-  sudo mv $BACKUP.pgsql docker_data_$MODE/apidb/tmp;
-  docker exec $POSTGRES_SERVICE bash -c "PGPASSWORD='$POSTGRES_PASS' pg_restore -h localhost -d '$POSTGRES_DBNAME' -U '$POSTGRES_USER' -c -C -W -v -O /var/lib/postgresql/tmp/$BACKUP.pgsql;"
-  docker exec $POSTGRES_SERVICE bash -c "PGPASSWORD='$POSTGRES_PASS' psql -h localhost -d '$POSTGRES_DBNAME' -U '$POSTGRES_USER' -c \"\\c postgres;SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = \'${APP_NAME}_api\';DROP DATABASE ${APP_NAME}_api;ALTER DATABASE ${APP_NAME}_api_${BACKUP_ID} RENAME TO ${APP_NAME}_api;\""
-  exit
-
-
-# Erase docker shared volumes
-elif [[ "$CMD" == "rmdb" ]]; then
-  RUN='cd $ROOT_PATH;
-	     sudo rm -rf docker_data_$MODE/apidb;'
+  docker-compose -f docker-compose.$MODE.yml down --volumes $(containers_from_names $*)
+  export PLATFORM=$PLATFORM && bash scripts/start_$MODE.sh  --force-recreate $(containers_from_names $*)
+  exit_with_success
 
 
 # Start docker-compose up with adapted env variables or webapps with local env
 elif [[ "$CMD" == "start" ]]; then
-  RUN='cd $ROOT_PATH;
-       bash scripts/start_$MODE.sh $*;'
-
+  cd $ROOT_PATH
+  export PLATFORM=$PLATFORM && bash scripts/start_$MODE.sh $(containers_from_names $*)
+  exit_with_success
 
 # Stop development containers
 elif [[ "$CMD" == "stop" ]]; then
-  RUN='cd $ROOT_PATH;
-       docker-compose -f docker-compose.$MODE.yml stop $*;'
+  cd $ROOT_PATH
+  docker-compose -f docker-compose.$MODE.yml stop $(containers_from_names $*)
+  exit_with_success
 
 
 # =============================================
@@ -288,48 +310,68 @@ elif [[ "$CMD" == "stop" ]]; then
 
 # Start the webapp front
 elif [[ "$CMD" == "webapp" ]]; then
-   API_URL=''
-   if [[ "$PLATFORM" == "ngrok" ]];then
-     API_URL='https://$NGROK_API_SUBDOMAIN.ngrok.io'
-   fi
-   RUN='cd $ROOT_PATH/webapp;
-        API_URL=$API_URL yarn start;'
+  SUB_CMD=${*:-not-set}
+  if [[ "$SUB_CMD" == "not-set" ]]; then
+    exit_with_error "You need to specify a sub command : build or start"
+  fi
+  API_URL=''
+  if [[ "$PLATFORM" == "ngrok" ]];then
+    API_URL='https://$NGROK_API_SUBDOMAIN.ngrok.io'
+  fi
+  cd $ROOT_PATH/webapp
+  API_URL=$API_URL yarn $*
+  exit_with_success
 
 
 # =============================================
 # Deploy commands
 # =============================================
 
+CURRENT_BRANCH=$(git symbolic-ref -q HEAD)
+CURRENT_BRANCH=${CURRENT_BRANCH##refs/heads/}
+
+function update_branch {
+  branch="$1"
+  git fetch
+  git checkout $branch
+  git reset --hard origin/$branch || (git checkout "$CURRENT_BRANCH" && exit_with_error)
+}
+
+
 # Tag new version using main repo
 elif [[ "$CMD" == "tag" ]]; then
-  if [[ "$TAG" != "not-set" ]]; then
-    TAG_VERSION="v$TAG"
+  git fetch
 
-    if $(git tag --list | grep -q $TAG_VERSION); then
-      echo "$TAG already exists."
-      exit
-    fi
-
-    cd "$ROOT_PATH"/api
-    echo "$TAG_VERSION" > version.txt
-
-    cd "$ROOT_PATH"
-    git add api/version.txt
-
-    cd "$ROOT_PATH"/webapp
-    yarn version --new-version "$TAG"
-
-    git commit -m "🚀 $TAG_VERSION"
-    git push origin master
-    git push origin "$TAG_VERSION"
-
-    echo "New version tagged : $TAG"
-
-    exit_success_restoring_branch
-  else
-    echo "You need to specify a tag."
-    exit
+  if [[ "$TAG" == "not-set" ]]; then
+    latest_tag=`git tag --list | grep '^v' | sort --version-sort | tail -n 1 | sed -e 's/^v//'`
+    incremented_tag=`echo "$latest_tag" | awk -F. -v OFS=. 'NF==1{print ++$NF}; NF>1{if(length($NF+1)>length($NF))$(NF-1)++; $NF=sprintf("%0*d", length($NF), ($NF+1)%(10^length($NF))); print}'`
+    confirm "No tag specified: use $incremented_tag (previous version was $latest_tag) ?"
+    TAG="$incremented_tag"
   fi
+  TAG_VERSION="v$TAG"
+
+  if $(git tag --list | grep -q $TAG_VERSION); then
+    exit_with_error "$TAG already exists."
+  fi
+
+  cd "$ROOT_PATH"/api
+  echo "$TAG_VERSION" > version.txt
+
+  cd "$ROOT_PATH"
+  git add api/version.txt
+
+  cd "$ROOT_PATH"/webapp
+  yarn version --new-version "$TAG"
+  cd -
+
+  git commit -m "🚀 $TAG_VERSION"
+  git push origin master
+  git push origin "$TAG_VERSION"
+
+  echo "New version tagged : $TAG"
+
+  git checkout "$CURRENT_BRANCH"
+  exit_with_success
 
 
 # Deploy all components using main repo
@@ -337,8 +379,9 @@ elif [[ "$CMD" == "deploy" ]]; then
   ensure_remote "Deploy cannot be run on the local environment. Use (for example) \"$COMMAND_NAME -e staging -t X.Y.Z "$CMD"\"."
 
   if [[ "$TAG" == 'not-set' ]]; then
-    echo_error "ERROR: You need to specify an existing tag to deploy"
-    exit_error_restoring_branch
+    latest_tag=`git tag --list | grep '^v' | sort --version-sort | tail -n 1 | sed -e 's/^v//'`
+    confirm "No tag specified: deploy latest ($latest_tag) ?"
+    TAG="$latest_tag"
   fi
 
   echo "$TAG will be deployed to $ENV"
@@ -348,8 +391,8 @@ elif [[ "$CMD" == "deploy" ]]; then
   if [[ ! -z $(git ls-remote --tags origin refs/tags/v"$TAG") ]]; then
     git checkout "v$TAG"
   else
-    echo_error "ERROR: You need to specify an existing remote tag to deploy"
-    exit_error_restoring_branch
+    git checkout "$CURRENT_BRANCH"
+    exit_with_error "You need to specify an existing remote tag to deploy"
   fi
 
   commit_to_deploy=$(git log -n 1 --pretty=format:%H)
@@ -358,14 +401,25 @@ elif [[ "$CMD" == "deploy" ]]; then
     update_branch staging
     staging_commit=$(git log -n 1 --pretty=format:%H staging)
     if [[ "$staging_commit" != "$commit_to_deploy" ]]; then
-      echo_error "ERROR: Can only deploy in production commits that are also deployed in staging"
-      exit_error_restoring_branch
+      git checkout "$CURRENT_BRANCH"
+      exit_with_error "Can only deploy in production commits that are also deployed in staging"
     fi
   fi
 
   git push -f origin HEAD:"$ENV"
+  git checkout "$CURRENT_BRANCH"
+  function follow_deployment() {
+    scalingo -a $1 deployment-follow | grep -B10000 -m1 'osc-fr1.scalingo.io' | sed -e "s/^/[$1] /" &
+  }
+  follow_deployment $APP_NAME-api-$ENV
+  wait
+  exit_with_success
 
-  exit_success_restoring_branch
+# Display the current version tag
+elif [[ "$CMD" == "version" ]]; then
+  cat "$ROOT_PATH/api/version.txt"
+  exit_with_success
+
 
 # =============================================
 # Initialization commands
@@ -373,13 +427,16 @@ elif [[ "$CMD" == "deploy" ]]; then
 
 # Install new local environment
 elif [[ "$CMD" == "install" ]]; then
-  RUN='cd $ROOT_PATH/webapp;
-			 yarn;'
+  cd $ROOT_PATH/webapp
+	yarn
+  exit_with_success
 
 
 # Create symlink to use "$(echo $COMMAND_NAME)" command (admin rights may be needed)
 elif [[ "$CMD" == "symlink" ]]; then
-	RUN='cd /usr/local/bin && ln -sf '"$(pwd)"'/$COMMAND_NAME $COMMAND_NAME && chmod +x $COMMAND_NAME && chmod +x '"$(pwd)"'/$COMMAND_NAME'
+	cd /usr/local/bin && ln -sf '"$(pwd)"'/$COMMAND_NAME $COMMAND_NAME && chmod +x $COMMAND_NAME && chmod +x '"$(pwd)"'/$COMMAND_NAME
+  exit_with_success
+
 
 # =============================================
 # Administration commands
@@ -389,31 +446,22 @@ elif [[ "$CMD" == "symlink" ]]; then
 elif [[ "$CMD" == "psql" ]]; then
   COLUMNS=${COLUMNS:-''};
   if [[ "$ENV" == "not-set" ]]; then
-		RUN='docker exec -it $POSTGRES_SERVICE bash -c "COLUMNS='$COLUMNS' PGPASSWORD='$POSTGRES_PASSWORD' psql -h localhost -U '$POSTGRES_USER' '$POSTGRES_DB' '$*'"'
+    check start ${DATABASE}db
+		docker exec -it $POSTGRES_SERVICE bash -c "COLUMNS='$COLUMNS' PGPASSWORD='$POSTGRES_PASSWORD' psql -h localhost -U '$POSTGRES_USER' '$POSTGRES_DB' '$*'"
   else
     scalingo -a "$SCALINGO_APP" pgsql-console
-    exit
   fi
-
+  exit_with_success
 
 # Open a python prompt in the specified environment
 elif [[ "$CMD" == "python" ]]; then
 	if [[ "$ENV" == "not-set" ]]; then
-		RUN='docker exec -it $API_SERVICE bash -c "cd /opt/api && PYTHONPATH=. python -i scripts/shell.py '"$CMD $*"'"'
+    check start api
+		docker exec -it $API_SERVICE bash -c "cd /opt/api && PYTHONPATH=. python -i scripts/shell.py '"$CMD $*"'"
 	else
 		scalingo -a "$SCALINGO_APP" run "python -i scripts/shell.py"
-		exit
 	fi
-
-
-# Open a python prompt in the specified environment
-elif [[ "$CMD" == "rm-db" ]]; then
-	if [[ "$ENV" == "not-set" ]]; then
-		RUN='sudo rm -rf $ROOT_PATH/docker_data_$MODE/apidb'
-	else
-		echo 'rm-db only possible when ENV is not set'
-		exit
-	fi
+  exit_with_success
 
 # =============================================
 # Python Scripts commands
@@ -422,16 +470,16 @@ elif [[ "$CMD" == "rm-db" ]]; then
 # Run python scripts from api/scripts
 else
   if [[ "$ENV" == "not-set" ]]; then
-    RUN='docker exec $API_SERVICE bash -c "cd /opt/api && PYTHONPATH=. python scripts/manager.py '"$CMD $*"'"'
+    check start api
+    docker exec $API_SERVICE bash -c "cd /opt/api && PYTHONPATH=. python scripts/manager.py '"$CMD $*"'"
   else
     scalingo -a "$SCALINGO_APP" run 'python scripts/manager.py '"$CMD $*"''
-    exit
   fi
+  exit_with_success
 fi
 
 # =============================================
 # Execute command
 # =============================================
 
-echo $RUN
-eval $RUN
+exit_with_error "Did not find a matched command for $CMD"
