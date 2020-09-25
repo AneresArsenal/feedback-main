@@ -1,79 +1,47 @@
-from sqlalchemy import func, Index, TEXT
-from sqlalchemy.sql.expression import cast
+from flask_sqlalchemy import BaseQuery
+from sqlalchemy import func
+from sqlalchemy.sql.expression import cast, and_, or_
 from sqlalchemy.sql.functions import coalesce
 
-from domain.keywords import LANGUAGE
+from domain.keywords import ts_queries_from_keywords_string, \
+                            LANGUAGE
+
+"""
+def get_first_matching_any_ts_queries_at_column(query, ts_queries, column):
+    ts_vector = func.to_tsvector(cast(coalesce(column, ''), TEXT))
+    ts_queries_filter = or_(
+        *[
+            ts_vector.match(ts_query, postgresql_regconfig=LANGUAGE)
+            for ts_query in ts_queries
+        ]
+    )
+    return query.filter(ts_queries_filter).first()
 
 
-def create_tsvector(*args):
-    exp = args[0]
-    for e in args[1:]:
-        exp += ' ' + e
-    return func.to_tsvector(LANGUAGE, exp)
+def get_first_matching_keywords_string_at_column(query, keywords_string, column):
+    ts_queries = ts_queries_from_keywords_string(keywords_string)
+    return get_first_matching_any_ts_queries_at_column(query, ts_queries, column)
+"""
+
+def create_get_filter_matching_ts_query_in_any_model(*models):
+    def get_filter_matching_ts_query_in_any_model(ts_query):
+        return or_(
+            *[
+                model.__ts_vector__.match(
+                    ts_query,
+                    postgresql_regconfig=LANGUAGE
+                )
+                for model in models
+            ]
+        )
+    return get_filter_matching_ts_query_in_any_model
 
 
-def import_keywords():
-    from models.content import Content
-    from models.review import Review
-    from models.tag import Tag
-    from models.user import User
-    from models.verdict import Verdict
-
-    Content.__ts_vector__ = create_tsvector(
-        cast(coalesce(Content.title, ''), TEXT),
-        cast(coalesce(Content.summary, ''), TEXT),
-    )
-    Content.__table_args__ = (
-        Index(
-            'idx_content_fts',
-            Content.__ts_vector__,
-            postgresql_using='gin'
-        ),
-    )
-
-    Review.__ts_vector__ = create_tsvector(
-        cast(coalesce(Review.comment, ''), TEXT),
-    )
-    Review.__table_args__ = (
-        Index(
-            'idx_review_fts',
-            Review.__ts_vector__,
-            postgresql_using='gin'
-        ),
-    )
-
-    Tag.__ts_vector__ = create_tsvector(
-        cast(coalesce(Tag.label, ''), TEXT),
-    )
-    Tag.__table_args__ = (
-        Index(
-            'idx_tag_fts',
-            Tag.__ts_vector__,
-            postgresql_using='gin'
-        ),
-    )
-
-    User.__ts_vector__ = create_tsvector(
-        cast(coalesce(User.email, ''), TEXT),
-        cast(coalesce(User.firstName, ''), TEXT),
-        cast(coalesce(User.lastName, ''), TEXT),
-    )
-    User.__table_args__ = (
-        Index(
-            'idx_user_fts',
-            User.__ts_vector__,
-            postgresql_using='gin'
-        ),
-    )
-
-    Verdict.__ts_vector__ = create_tsvector(
-        cast(coalesce(Verdict.comment, ''), TEXT),
-        cast(coalesce(Verdict.title, ''), TEXT),
-    )
-    Verdict.__table_args__ = (
-        Index(
-            'idx_verdict_fts',
-            Verdict.__ts_vector__,
-            postgresql_using='gin'
-        ),
-    )
+def create_filter_matching_all_keywords_in_any_model(get_filter_matching_ts_query_in_any_model,
+                                                     keywords_string):
+    ts_queries = ts_queries_from_keywords_string(keywords_string)
+    ts_filters = [
+        get_filter_matching_ts_query_in_any_model(ts_query)
+        for ts_query in ts_queries
+    ]
+    return and_(*ts_filters)

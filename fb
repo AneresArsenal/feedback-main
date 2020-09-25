@@ -167,28 +167,9 @@ elif [[ "$CMD" == "bash" ]]; then
 	fi
 
 
-# Clean all type of data
-elif [[ "$CMD" == "clean" ]]; then
-  TARGET=${1:-database}
-  if [[ "$TARGET" == "storage" ]]; then
-    RUN='cd $ROOT_PATH;
-         sudo rm -rf api/static/object_store_data;'
-  else
-    RUN='cd $ROOT_PATH;
-         sh scripts/clean.sh $MODE $TARGET;'
-  fi
-
-
 # Launch the python clock process locally
 elif [[ "$CMD" == "clock" ]]; then
     RUN='docker exec $API_SERVICE bash -c "cd /opt/api && PYTHONPATH=. python clock.py"'
-
-
-elif [[ "$CMD" == "create-db-pgdump" ]]; then
-  FILE=db_$(date +"%Y_%m_%d__%H_%M_%S").pgdump
-  RUN='cd $ROOT_PATH;
-       docker exec $POSTGRES_SERVICE bash -c "PGPASSWORD='$POSTGRES_PASSWORD' pg_dump -h localhost -d '$POSTGRES_DB' -U '$POSTGRES_USER' -F c > "/var/lib/postgresql/$FILE;
-       sudo mv docker_data_$MODE/${DATABASE}db/$FILE .;'
 
 
 # Create a current schema sql of the postgres db

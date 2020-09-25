@@ -1,5 +1,7 @@
 from sqlalchemy_api_handler import logger
 
+from repository import import_keywords
+from utils.activity import import_activity
 from utils.db import db
 
 
@@ -11,3 +13,12 @@ def clean():
 
     db.session.commit()
     logger.info('clean all the database...Done.')
+
+
+def create():
+    logger.info('create all the database...')
+    import_activity()
+    import_keywords()
+    db.create_all()
+    db.session.commit()
+    logger.info('create all the database...Done.')

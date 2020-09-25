@@ -10,8 +10,8 @@ FLASK_APP = Flask(__name__, static_url_path='/static')
 
 setup(FLASK_APP,
       with_cors=True,
+      with_keywords=True,
       with_login_manager=True,
-      with_models_creation=IS_DEVELOPMENT,
       with_routes=True)
 
 

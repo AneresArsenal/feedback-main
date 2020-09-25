@@ -42,6 +42,7 @@ def app():
     flask_app.config['TESTING'] = True
 
     setup(flask_app,
+          with_keywords=True,
           with_login_manager=True,
           with_routes=True)
 

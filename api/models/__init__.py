@@ -3,12 +3,10 @@
 # pylint: disable=R0914
 
 from flask_sqlalchemy.model import DefaultMeta
-from repository.keywords import import_keywords
-from utils.activity import import_activity
 from utils.db import db
 
 
-def import_models(with_creation=False):
+def import_models():
     from models.appearance import Appearance
     from models.author_content import AuthorContent
     from models.claim import Claim
@@ -30,12 +28,5 @@ def import_models(with_creation=False):
     from models.verdict_reviewer import VerdictReviewer
     from models.verdict_tag import VerdictTag
 
-    if with_creation:
-        import_activity()
-        db.create_all()
-        db.engine.execute("CREATE INDEX IF NOT EXISTS idx_activity_objid ON activity(cast(changed_data->>'id' AS INT));")
-        db.session.commit()
-
-    import_keywords()
 
     return [v for v in locals().values() if type(v) == DefaultMeta]
