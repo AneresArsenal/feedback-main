@@ -32,8 +32,6 @@ const _ = ({ children, collectionName, entityId }) => {
 
   if (!graphWithDecoration) return null
 
-  // console.log(graphWithDecoration.nodes.[1])
-
   return (
     <Graph graph={graphWithDecoration}>
       {children}
