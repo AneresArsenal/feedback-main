@@ -1,7 +1,7 @@
 import React, { useCallback, useMemo, useState, useEffect } from 'react'
 import { useLocation, useHistory } from 'react-router-dom'
 import { useSelector, useDispatch } from 'react-redux'
-import { requestData } from 'redux-thunk-data'
+import { selectEntitiesByKeyAndJoin, requestData } from 'redux-thunk-data'
 
 import Controls from 'components/layout/Controls'
 import Header from 'components/layout/Header'
@@ -41,18 +41,13 @@ export default () => {
   )
 
   useEffect(() => {
-    dispatch(requestData({
-      apiPath: '/db_stats',
-      isMergingDatum: true
-    }))
+    dispatch(requestData({ apiPath: '/statistics' }))
   }, [dispatch])
 
-  const [linkCount, verdictCount] = useSelector(({ data }) => {
-    return [
-      data?.db_stats?.[0]?.contentCount || 2674,
-      data?.db_stats?.[0]?.verdictCount || 449
-    ]
-  })
+  const contentsCount = (useSelector(state =>
+    selectEntitiesByKeyAndJoin(state, 'statistics', { key: 'collectionName', value: 'contents' }))[0] || {}).count
+  const verdictsCount = (useSelector(state =>
+    selectEntitiesByKeyAndJoin(state, 'statistics', { key: 'collectionName', value: 'verdicts' }))[0] || {}).count
 
 
   return (
@@ -61,17 +56,17 @@ export default () => {
       <Main className="landing with-header">
         <section className="hero">
           <div className="container">
-            {verdictCount && linkCount && (
+            {verdictsCount && contentsCount && (
               <p className="h1">
                 <b>
-                  {verdictCount}
+                  {verdictsCount}
                 </b>
                 {' reviews'}
                 <br />
                 {'and'}
                 <br />
                 <b>
-                  {linkCount}
+                  {contentsCount}
                 </b>
                 {' content URLs flagged'}
               </p>
