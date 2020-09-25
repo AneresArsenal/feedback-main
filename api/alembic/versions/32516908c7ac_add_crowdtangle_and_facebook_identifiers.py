@@ -1,4 +1,4 @@
-"""Add CrowdTangle and Facebook identifiers to some tables
+"""Add crowdTangle and facebook identifiers
 
 Revision ID: 32516908c7ac
 Revises: 45455116256d
