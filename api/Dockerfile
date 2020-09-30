@@ -6,7 +6,7 @@ WORKDIR /opt/api
 COPY ./requirements.txt /opt/api/requirements.txt
 RUN pip install -r /opt/api/requirements.txt
 
-COPY ./utils/nltk_downloader.py /opt/api/utils/nltk_downloader.py
-RUN PYTHONPATH=/opt/api python -c "import utils.nltk_downloader"
+COPY ./utils/nltk.py /opt/api/utils/nltk.py
+RUN PYTHONPATH=/opt/api python -c "import utils.nltk"
 
 EXPOSE 5000
