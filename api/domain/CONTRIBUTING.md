@@ -1,39 +1,37 @@
 # Package `domain`
-Les modules de ce package contiennent des fonctions de deux natures différentes :
-* cas n°1 : ce sont des fonctions **pures**, c'est à dire qui offrent une transparence réferentielle
-* cas n°2 : ce sont des fonctions **impures**, qui font appel à des fonctions de `repository` passées
-en paramètre (`arg` ou `kwarg`)
+The modules of this package contain two different function types:
 
-C'est à dire que pour deux appels avec les mêmes valeurs retournées par les fonctions de `repository`,
-les fonctions de `domain` doivent retourner les mêmes resultats.
+* Case 1 : these are ** pure ** functions, that is to say which offer referential transparency
+* Case 2 : these are ** impure ** functions, which call on past `repository` functions in parameter (ʻarg` or `kwarg`)
 
-Elles ont toujours pour but d'implémenter des règles de gestion qui modélisent le "domaine métier" de l'application.
+That is, for two calls with the same values ​​returned by the `repository` functions,
+the functions of `domain` should return the same results.
+
+Their goal is always to implement management rules which model the "business domain" of the application.
 
 ## Do
-Ces fonctions doivent contenir : des appels à des fontions de `domain`, ou `repository` ainsi que les différents _HTTP status codes_ que l'ont souhaite retourner.
+These functions must contain: calls to `domain`, or` repository` functions as well as the various _HTTP status codes_ that we wish to return.
 
 ## Don't
-Ces fonctions ne doivent pas contenir : des _queries_ vers la base de données, des appels à des web services, ou quoi que
-ce soit qui soit considéré comme un I/O. Ces `I/O functions` peuvent être utilisées par une `domain function` à condition
-qu'elles soient proprement injectées (i.e. en argument de fonction, en keyword-argument de fonction ou en constructeur de classe).
+These functions must not contain: _queries_ to the database, calls to web services, or whatever
+whatever is considered an I / O. These ʻI / O functions` can be used by a `domain function` provided
+whether they are properly injected (i.e. as a function argument, a function keyword-argument or a class constructor).
 
 ## Testing
-Ces fonctions sont testées de manière unitaire et ne nécessitent ni _mocking_, ni instanciation de la base de donnée
-ou d'un contexte Flask. Ces tests doivent être extrêmement rapides à l'exécution et sont généralement un excellent terrain
-d'apprentissage pour le Test Driven Development (TDD).
+These functions are unit tested and do not require _mocking_ or instantiation of the database or a Flask context. These tests must be extremely quick to run and are generally excellent ground. training for Test Driven Development (TDD).
 
-Ils ont pour objectif de :
-* lister les comportements et responsabilités d'une fonction
-* lister les exceptions "métier" qu'une fonction est susceptible de lever
-* donner des exemples d'exécution d'une fonction
+Their objectives include:
+* list the behaviors and responsibilities of a function
+* list the "business" exceptions that a function is likely to throw
+* give examples of the execution of a function
 
 
-## Pour en savoir plus
+## For more information
 * https://fr.wikipedia.org/wiki/Transparence_r%C3%A9f%C3%A9rentielle
-* On appelle une `I/O function` toute fonction qui dépend d'un système externe à son contexte d'exécution. Par exemple :
-  * un système de fichier
-  * une base de donnée
-  * l'horloge du serveur
-  * le réseau
-  * un capteur de luminosité
+* We call an `I / O function` any function that depends on a system external to its execution context. For example:
+  * a file system
+  * a database
+  * server clock
+  * the network
+  * a light sensor
   * etc.
