@@ -1,28 +1,27 @@
 # Package `routes`
-Les modules de ce package contiennent des fonctions python de type _controller_ ainsi que le _binding_ de ces fonctions
-avec les routes d'API grâce au _framework Flask_.
+The modules of this package contain python functions of type _controller_ as well as the _binding_ of these functions
+with API routes thanks to the _framework Flask_.
 
 ## Do
 Ces fonctions doivent contenir : des appels à des fontions de `domain`, ou `repository` ainsi que les différents _HTTP status codes_ que l'ont souhaite retourner.
 
 ## Don't
-Ces fonctions ne doivent pas contenir : des règles de gestion, des _queries_ vers la base de données ou des appels à des
-web services.
+These functions must contain: calls to `domain`, or` repository` functions as well as the various _HTTP status codes_ that we wish to return with the API routes thanks to the _framework Flask_.
 
 ## Testing
-Ces fonctions sont testées au travers des routes, avec des tests fonctionnels. Ces tests utilisent des appels HTTP et
-se positionnent donc "du point de vue du client".
+These functions are tested across routes, with functional tests. These tests use HTTP calls and
+therefore position themselves from the users' point of view.
 
-Ils ont pour objectif de :
-* documenter les différents status codes qui existent pour chaque route
-* documenter le JSON attendu en entrée pour chaque route
-* documenter le JSON attendu en sortie pour chaque route
-* détecter les régressions sur les routes d'API
+They aim to:
+* document the different status codes that exist for each route
+* document the expected JSON input for each route
+* document the expected JSON output for each route
+* detect regressions on API routes
 
-Ils n'ont pas pour objectifs de :
-* tester l'intégralité des cas passants ou non-passants possibles. Ces cas là seront testés plus près du code, dans des
-modules de `domain` ou de `repository` par exemple.
+They do not aim to:
+* test all possible pass or non-pass cases. These cases will be tested closer to the code, in
+modules of `domain` or` repository` for example.
 
 
-## Pour en savoir plus
+## For more information
 * http://flask.pocoo.org/docs/1.0/quickstart/#routing
